@@ -43,6 +43,7 @@ export function createShapeObject(shapeKey, x = 0, y = 0) {
     const g = _drawShape(shapeKey, def.color);
     container.addChild(g);
     container.spriteGraphic = g;
+    container._tintColor = def.color;  // store initial tint per-object
 
     _attachGizmos(container);
     if (state._bindGizmoHandles) state._bindGizmoHandles(container);
@@ -65,12 +66,16 @@ export function createImageObject(asset, x = 0, y = 0) {
     container.isImage  = true;
     container.assetId  = asset.id;
 
-    const tex     = PIXI.Texture.from(asset.dataURL);
-    const sprite  = new PIXI.Sprite(tex);
+    const tex = PIXI.Texture.from(asset.dataURL);
+    // Use linear filtering for smooth edges — no pixelation
+    tex.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
+    const sprite = new PIXI.Sprite(tex);
     sprite.anchor.set(0.5);
-    // Normalise to 100×100 px initially
-    const maxDim  = Math.max(tex.width || 100, tex.height || 100);
-    const scale   = 100 / maxDim;
+    // Initial display size: 100px on longest axis, but retain full source resolution
+    const natW   = tex.baseTexture.realWidth  || 100;
+    const natH   = tex.baseTexture.realHeight || 100;
+    const maxDim = Math.max(natW, natH);
+    const scale  = 100 / maxDim;
     sprite.scale.set(scale);
     container.addChild(sprite);
     container.spriteGraphic = sprite;
@@ -88,17 +93,16 @@ export function createImageObject(asset, x = 0, y = 0) {
 
 // ── Select Object ─────────────────────────────────────────────
 export function selectObject(obj) {
-    // Hide old gizmos
-    if (state.gameObject && state.gameObject !== obj) {
-        const oldGizmo = state.gameObject._gizmoContainer;
-        if (oldGizmo) oldGizmo.visible = false;
+    // Hide ALL object gizmos first (clean slate)
+    for (const o of state.gameObjects) {
+        if (o._gizmoContainer) o._gizmoContainer.visible = false;
     }
 
     state.gameObject = obj;
 
     if (obj) {
-        const gc = obj._gizmoContainer;
-        if (gc) gc.visible = true;
+        // Show this object's gizmo container
+        if (obj._gizmoContainer) obj._gizmoContainer.visible = true;
 
         state.gizmoContainer = obj._gizmoContainer;
         state.grpTranslate   = obj._grpTranslate;
@@ -106,6 +110,19 @@ export function selectObject(obj) {
         state.grpScale       = obj._grpScale;
         state._gizmoHandles  = obj._gizmoHandles;
         state.spriteBox      = obj.spriteGraphic;
+
+        // Apply the CURRENT gizmo mode immediately — fixes selection bug
+        const m = state.gizmoMode || 'translate';
+        if (obj._grpTranslate) obj._grpTranslate.visible = (m === 'translate' || m === 'all');
+        if (obj._grpRotate)    obj._grpRotate.visible    = (m === 'rotate'    || m === 'all');
+        if (obj._grpScale)     obj._grpScale.visible     = (m === 'scale'     || m === 'all');
+
+        // Sync color picker to this object's actual tint (per-object inspector fix)
+        const colorEl = document.getElementById('inp-color');
+        if (colorEl && obj.spriteGraphic?.tint !== undefined) {
+            const tint = obj.spriteGraphic.tint;
+            colorEl.value = '#' + tint.toString(16).padStart(6, '0');
+        }
     }
 
     syncPixiToInspector();
@@ -161,6 +178,22 @@ export function moveObjectDown(obj) {
     const ref = arr[i]; // what used to be i+1
     const refIdx = state.sceneContainer.children.indexOf(ref);
     state.sceneContainer.addChildAt(obj, refIdx + 1);
+    refreshHierarchy();
+}
+
+// ── Apply Z position as Z-order (render priority) ────────────
+export function applyZOrder(obj) {
+    if (!obj || !state.sceneContainer) return;
+    const z = obj.unityZ || 0;
+    // Re-insert at correct zIndex position based on unityZ
+    const sorted = [...state.gameObjects].sort((a, b) => (a.unityZ||0) - (b.unityZ||0));
+    for (let i = 0; i < sorted.length; i++) {
+        const o = sorted[i];
+        if (state.sceneContainer.children.includes(o)) {
+            state.sceneContainer.removeChild(o);
+            state.sceneContainer.addChild(o);
+        }
+    }
     refreshHierarchy();
 }
 

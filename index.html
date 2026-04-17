@@ -11,6 +11,7 @@
 
 <!-- Hidden file input for asset importing -->
 <input type="file" id="asset-file-input" accept="image/*" multiple style="display:none;">
+<input type="file" id="audio-file-input" accept=".mp3,.wav,.ogg,.m4a,.flac,.aac,audio/*" multiple style="display:none;">
 
 <!-- ── Top Menu Bar ──────────────────────────────────────────── -->
 <div class="menu-bar flex items-center px-2 divider-h">
@@ -165,6 +166,10 @@
                     <svg class="icon-stroke mr-1" style="color:#aaa;" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
                     Assets
                 </div>
+                <div class="tab tab-inactive" id="tab-prefabs-btn">
+                    <svg class="icon-stroke mr-1" style="color:#aaa;" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    Prefabs
+                </div>
                 <div class="tab tab-inactive" id="tab-console-btn">
                     <svg class="icon-stroke mr-1" style="color:#aaa;" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8l4 4-4 4M14 16h4"/></svg>
                     Console
@@ -184,9 +189,13 @@
                         <svg class="icon mr-1" style="color:#aaa;" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
                         Scenes
                     </div>
-                    <div class="tree-item" style="padding:4px 6px; padding-left:20px;">
+                    <div class="tree-item" id="folder-sprites" style="padding:4px 6px; padding-left:20px; cursor:pointer;">
                         <svg class="icon mr-1" style="color:#aaa;" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
                         Sprites
+                    </div>
+                    <div class="tree-item" id="folder-audio" style="padding:4px 6px; padding-left:20px; cursor:pointer;">
+                        <svg class="icon mr-1" style="color:#aaa;" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        Audio
                     </div>
                 </div>
 
@@ -195,13 +204,24 @@
                     <!-- Import bar -->
                     <div style="display:flex; align-items:center; padding:5px 10px; border-bottom:1px solid #222; gap:8px; flex-shrink:0;">
                         <button id="btn-import-asset" style="background:#2a4a6a; border:1px solid #3A72A5; color:#cce; border-radius:2px; padding:3px 10px; cursor:pointer; font-size:11px;">
-                            ＋ Import Asset
+                            ＋ Import Image
                         </button>
-                        <span style="color:#666; font-size:10px;">or drag images from Assets menu · Drop onto scene to place</span>
+                        <button id="btn-import-audio" style="background:#2a3a1a; border:1px solid #4a7a2a; color:#aca; border-radius:2px; padding:3px 10px; cursor:pointer; font-size:11px;">
+                            🎵 Import Audio
+                        </button>
+                        <span style="color:#666; font-size:10px;">Drop images onto scene to place</span>
                     </div>
                     <!-- Thumbnails -->
                     <div id="asset-grid" class="flex-1 overflow-y-auto p-2" style="display:flex; flex-wrap:wrap; gap:8px; align-content:flex-start;"></div>
                 </div>
+            </div>
+
+            <!-- Prefabs tab content -->
+            <div id="tab-prefabs" class="flex-1 flex flex-col overflow-hidden" style="display:none; background:#252525;">
+                <div style="display:flex; align-items:center; padding:5px 10px; border-bottom:1px solid #222; gap:8px; flex-shrink:0; background:#222;">
+                    <span style="color:#888; font-size:10px;">Right-click any object → Save as Prefab · Drag prefabs into scene</span>
+                </div>
+                <div id="prefab-grid" style="flex:1; overflow-y:auto; display:flex; flex-wrap:wrap; gap:8px; padding:8px; align-content:flex-start;"></div>
             </div>
 
             <!-- Console tab content -->
@@ -209,6 +229,16 @@
                 <div style="color:#4ade80;">▶ Zengine started</div>
                 <div style="color:#666;">Scroll to zoom · Middle-click to pan · Shift+drag to snap</div>
                 <div style="color:#666;">W=Translate  E=Rotate  R=Scale  Delete=Remove</div>
+                <div style="color:#666;">Right-click object → Save as Prefab</div>
+            </div>
+
+            <!-- Audio panel (shown inside Assets when Audio folder selected) -->
+            <div id="tab-audio" class="flex-1 flex flex-col overflow-hidden" style="display:none; background:#1e1e1e;">
+                <div style="display:flex; align-items:center; padding:5px 10px; border-bottom:1px solid #222; gap:8px; flex-shrink:0; background:#222;">
+                    <button id="btn-import-audio-2" style="background:#2a3a1a; border:1px solid #4a7a2a; color:#aca; border-radius:2px; padding:3px 10px; cursor:pointer; font-size:11px;">🎵 Import Audio</button>
+                    <span style="color:#555; font-size:10px;">Supported: .mp3 .wav .ogg .m4a .flac</span>
+                </div>
+                <div id="audio-grid" style="flex:1; overflow-y:auto;"></div>
             </div>
 
             <!-- Status bar -->
@@ -317,18 +347,45 @@
     window.onload = () => {
         startEngine();
 
-        // Tab switching: Assets / Console
-        document.getElementById('tab-assets-btn').addEventListener('click', () => {
-            document.getElementById('tab-assets').style.display = 'flex';
-            document.getElementById('tab-console').style.display = 'none';
-            document.getElementById('tab-assets-btn').className = 'tab tab-active';
-            document.getElementById('tab-console-btn').className = 'tab tab-inactive';
+        // Tab switching
+        function switchBottomTab(activeTabId) {
+            const tabs = {
+                'tab-assets':  { btn: 'tab-assets-btn',  display: 'flex' },
+                'tab-prefabs': { btn: 'tab-prefabs-btn', display: 'flex' },
+                'tab-console': { btn: 'tab-console-btn', display: 'block' },
+                'tab-audio':   { btn: null,               display: 'flex' },
+            };
+            Object.entries(tabs).forEach(([id, cfg]) => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = id === activeTabId ? cfg.display : 'none';
+                if (cfg.btn) {
+                    const btn = document.getElementById(cfg.btn);
+                    if (btn) btn.className = 'tab ' + (id === activeTabId ? 'tab-active' : 'tab-inactive');
+                }
+            });
+        }
+        document.getElementById('tab-assets-btn').addEventListener('click', () => switchBottomTab('tab-assets'));
+        document.getElementById('tab-prefabs-btn').addEventListener('click', () => switchBottomTab('tab-prefabs'));
+        document.getElementById('tab-console-btn').addEventListener('click', () => switchBottomTab('tab-console'));
+
+        // Audio folder click in sidebar → show audio panel
+        document.getElementById('folder-audio')?.addEventListener('click', () => switchBottomTab('tab-audio'));
+        document.getElementById('folder-sprites')?.addEventListener('click', () => switchBottomTab('tab-assets'));
+
+        // Audio import buttons
+        document.getElementById('btn-import-audio')?.addEventListener('click', () => {
+            document.getElementById('audio-file-input')?.click();
         });
-        document.getElementById('tab-console-btn').addEventListener('click', () => {
-            document.getElementById('tab-assets').style.display = 'none';
-            document.getElementById('tab-console').style.display = 'block';
-            document.getElementById('tab-assets-btn').className = 'tab tab-inactive';
-            document.getElementById('tab-console-btn').className = 'tab tab-active';
+        document.getElementById('btn-import-audio-2')?.addEventListener('click', () => {
+            document.getElementById('audio-file-input')?.click();
+        });
+        document.getElementById('audio-file-input')?.addEventListener('change', async (e) => {
+            const { importAudioFile } = await import('./engine.audio.js');
+            for (const file of Array.from(e.target.files)) {
+                await importAudioFile(file);
+            }
+            e.target.value = '';
+            switchBottomTab('tab-audio');
         });
 
         // Scene switcher button

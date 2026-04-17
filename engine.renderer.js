@@ -8,6 +8,14 @@ import { state, PIXELS_PER_UNIT } from './engine.state.js';
 export function initScene() {
     const { app } = state;
 
+    // ── GPU / Quality settings ────────────────────────────
+    // Use LINEAR filtering for smooth edges (no pixelation)
+    PIXI.settings.SCALE_MODE      = PIXI.SCALE_MODES.LINEAR;
+    // Preserve full resolution — no forced downscale
+    PIXI.settings.RESOLUTION      = window.devicePixelRatio || 1;
+    // Max texture size guard (GPU limit)
+    PIXI.settings.SPRITE_MAX_TEXTURES = 32;
+
     state.sceneContainer = new PIXI.Container();
     app.stage.addChild(state.sceneContainer);
     state.sceneContainer.position.set(

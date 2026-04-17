@@ -17,6 +17,8 @@ import {
     initSceneDrop,
 } from './engine.ui.js';
 import { initScenes, toggleSceneDropdown } from './engine.scenes.js';
+import { refreshPrefabPanel, initPrefabDrop } from './engine.prefabs.js';
+import { refreshAudioPanel } from './engine.audio.js';
 
 export function startEngine() {
     if (typeof PIXI === 'undefined') {
@@ -43,6 +45,7 @@ export function startEngine() {
     cacheInspectorElements();
     initInspectorListeners();
     initSceneDrop();
+    initPrefabDrop();
 
     setGizmoMode('translate');
 
@@ -53,11 +56,65 @@ export function startEngine() {
     syncPixiToInspector();
     refreshHierarchy();
     refreshAssetPanel();
+    refreshPrefabPanel();
+    refreshAudioPanel();
 
     // Init scenes + menus
     initScenes();
     initMenus();
     initResizePanels();
+    initContextMenu();
+}
+
+// ── Right-click context menu on scene ────────────────────────
+function initContextMenu() {
+    const canvas = document.getElementById('pixi-container');
+    if (!canvas) return;
+    canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const obj = state.gameObject;
+        if (!obj) return;
+
+        document.getElementById('ctx-menu')?.remove();
+        const menu = document.createElement('div');
+        menu.id = 'ctx-menu';
+        menu.style.cssText = \`position:fixed;left:\${e.clientX}px;top:\${e.clientY}px;
+            background:#242424;border:1px solid #444;border-radius:3px;
+            box-shadow:0 4px 16px rgba(0,0,0,0.6);z-index:9999;font-size:11px;
+            color:#e0e0e0;min-width:160px;padding:3px 0;\`;
+
+        const items = [
+            { label: '⭐ Save as Prefab', action: () => {
+                import('./engine.prefabs.js').then(m => {
+                    m.saveAsPrefab(obj);
+                    // Switch to prefab tab
+                    document.getElementById('tab-prefabs-btn')?.click();
+                });
+            }},
+            { separator: true },
+            { label: '🗑 Delete Object', action: () => import('./engine.objects.js').then(m => m.deleteSelected()) },
+        ];
+
+        for (const item of items) {
+            if (item.separator) {
+                const s = document.createElement('div');
+                s.style.cssText = 'border-top:1px solid #333;margin:3px 0;';
+                menu.appendChild(s); continue;
+            }
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:6px 14px;cursor:pointer;white-space:nowrap;';
+            row.textContent = item.label;
+            row.addEventListener('mouseenter', () => row.style.background = '#3A72A5');
+            row.addEventListener('mouseleave', () => row.style.background = '');
+            row.addEventListener('click', () => { menu.remove(); item.action(); });
+            menu.appendChild(row);
+        }
+
+        document.body.appendChild(menu);
+        setTimeout(() => {
+            document.addEventListener('click', function h() { menu.remove(); document.removeEventListener('click', h); });
+        }, 0);
+    });
 }
 
 // ── Menu System ───────────────────────────────────────────────

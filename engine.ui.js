@@ -57,12 +57,18 @@ export function syncInspectorToPixi() {
     const go = state.gameObject;
     if (!go) return;
 
+    const prevZ = go.unityZ;
     go.x        = (parseFloat(els.px.value) || 0) *  PIXELS_PER_UNIT;
     go.y        = (parseFloat(els.py.value) || 0) * -PIXELS_PER_UNIT;
     go.unityZ   =  parseFloat(els.pz.value) || 0;
     go.rotation = (parseFloat(els.rz.value) || 0) * -Math.PI / 180;
     go.scale.x  =  parseFloat(els.sx.value) || 1;
     go.scale.y  =  parseFloat(els.sy.value) || 1;
+
+    // Z value changed → re-sort render order immediately
+    if (go.unityZ !== prevZ) {
+        import('./engine.objects.js').then(m => m.applyZOrder(go));
+    }
 }
 
 // ── Inspector Listeners ───────────────────────────────────────
@@ -229,7 +235,7 @@ export function refreshAssetPanel() {
 
         const thumb = document.createElement('img');
         thumb.src = asset.dataURL;
-        thumb.style.cssText = 'width:48px; height:48px; object-fit:contain; border-radius:2px; background:#1e1e1e;';
+        thumb.style.cssText = 'width:48px; height:48px; object-fit:contain; border-radius:2px; background:#1e1e1e; image-rendering:auto;';
 
         const name = document.createElement('span');
         name.textContent = asset.name.length > 10 ? asset.name.slice(0, 9) + '…' : asset.name;
