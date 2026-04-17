@@ -78,10 +78,10 @@ function initContextMenu() {
         document.getElementById('ctx-menu')?.remove();
         const menu = document.createElement('div');
         menu.id = 'ctx-menu';
-        menu.style.cssText = \`position:fixed;left:\${e.clientX}px;top:\${e.clientY}px;
+        menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;
             background:#242424;border:1px solid #444;border-radius:3px;
             box-shadow:0 4px 16px rgba(0,0,0,0.6);z-index:9999;font-size:11px;
-            color:#e0e0e0;min-width:160px;padding:3px 0;\`;
+            color:#e0e0e0;min-width:160px;padding:3px 0;`;
 
         const items = [
             { label: '⭐ Save as Prefab', action: () => {
