@@ -94,7 +94,6 @@ function _saveCurrentScene() {
         isImage:   obj.isImage,
         assetId:   obj.assetId,
         prefabId:  obj.prefabId || null,
-        overrides: obj.overrides ? { ...obj.overrides } : {},
         x:         obj.x,
         y:         obj.y,
         scaleX:    obj.scale.x,
@@ -104,7 +103,6 @@ function _saveCurrentScene() {
         tint:      obj.spriteGraphic?.tint ?? 0xFFFFFF,
         animations: obj.animations ? JSON.parse(JSON.stringify(obj.animations)) : [],
         activeAnimIndex: obj.activeAnimIndex || 0,
-        components: obj.components ? JSON.parse(JSON.stringify(obj.components)) : [],
     }));
 
     scene.snapshot = {
@@ -177,8 +175,6 @@ function _loadScene(index) {
                 obj.rotation   = s.rotation;
                 obj.unityZ     = s.unityZ;
                 obj.prefabId   = s.prefabId || null;
-                obj.overrides  = s.overrides ? { ...s.overrides } : {};
-                obj.components = s.components ? JSON.parse(JSON.stringify(s.components)) : [];
                 if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = s.tint;
 
                 // Restore animations
@@ -393,28 +389,4 @@ function _buildSceneDropdown() {
             }
         });
     }, 0);
-}
-
-// ── Update Prefab Across All Scene Snapshots ──────────────────
-export function updatePrefabInAllScenes(prefab) {
-    for (let i = 0; i < state.scenes.length; i++) {
-        if (i === state.activeSceneIndex) continue; // live scene handled separately
-        const scene = state.scenes[i];
-        if (!scene.snapshot?.objects) continue;
-        for (const s of scene.snapshot.objects) {
-            if (s.prefabId !== prefab.id) continue;
-            const ov = s.overrides || {};
-            // Visual properties — position is intentionally NOT touched
-            // Per-instance overrides are respected
-            if (!ov.tint)     s.tint     = prefab.tint;
-            if (!ov.scaleX)   s.scaleX   = prefab.scaleX;
-            if (!ov.scaleY)   s.scaleY   = prefab.scaleY;
-            if (!ov.rotation) s.rotation = prefab.rotation;
-            s.animations     = prefab.animations
-                ? JSON.parse(JSON.stringify(prefab.animations)) : [];
-            s.activeAnimIndex = prefab.activeAnimIndex || 0;
-            s.components     = prefab.components
-                ? JSON.parse(JSON.stringify(prefab.components)) : [];
-        }
-    }
 }
