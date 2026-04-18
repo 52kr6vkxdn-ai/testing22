@@ -6,6 +6,12 @@
 import { state } from './engine.state.js';
 import { syncPixiToInspector, refreshHierarchy } from './engine.ui.js';
 
+let _pushUndo = null;
+async function _getUndo() {
+    if (!_pushUndo) _pushUndo = (await import('./engine.history.js')).pushUndo;
+    return _pushUndo;
+}
+
 // ── Shape Definitions ────────────────────────────────────────
 export const SHAPES = {
     square:       { label: 'Square',        color: 0x3B82F6 },
@@ -32,6 +38,8 @@ export function createShapeObject(shapeKey, x = 0, y = 0) {
     const def = SHAPES[shapeKey];
     if (!def) return;
 
+    _getUndo().then(push => push());
+
     const container = new PIXI.Container();
     container.x = x;
     container.y = y;
@@ -57,6 +65,7 @@ export function createShapeObject(shapeKey, x = 0, y = 0) {
 
 // ── Create Image Sprite Object ───────────────────────────────
 export function createImageObject(asset, x = 0, y = 0) {
+    _getUndo().then(push => push());
     const container = new PIXI.Container();
     container.x = x;
     container.y = y;
@@ -123,26 +132,13 @@ export function selectObject(obj) {
 // ── Save As Prefab ────────────────────────────────────────────
 export function saveAsPrefab(obj) {
     if (!obj) return;
-    const name = obj.label || 'Prefab';
-    const prefab = {
-        id:        'prefab_' + Date.now() + '_' + Math.random().toString(36).slice(2),
-        name,
-        shapeKey:  obj.shapeKey  || 'square',
-        isImage:   obj.isImage   || false,
-        assetId:   obj.assetId   || null,
-        tint:      obj.spriteGraphic?.tint ?? 0xFFFFFF,
-        scaleX:    obj.scale.x,
-        scaleY:    obj.scale.y,
-        rotation:  obj.rotation,
-        animations: obj.animations ? JSON.parse(JSON.stringify(obj.animations)) : [],
-    };
-    state.prefabs.push(prefab);
-    obj.prefabId = prefab.id; // link this instance to the prefab
-    import('./engine.ui.js').then(m => {
-        m.refreshPrefabPanel();
-        m.syncPixiToInspector(); // refresh inspector to show prefab link
+    // Delegate to the canonical prefab module
+    return import('./engine.prefabs.js').then(m => {
+        const prefab = m.saveAsPrefab(obj);
+        obj.prefabId = prefab.id;
+        import('./engine.ui.js').then(u => u.syncPixiToInspector());
+        return prefab;
     });
-    return prefab;
 }
 
 // ── Apply Prefab Changes to All Instances ─────────────────────
@@ -198,6 +194,8 @@ export function instantiatePrefab(prefab, x = 0, y = 0) {
 export function deleteSelected() {
     const obj = state.gameObject;
     if (!obj) return;
+
+    _getUndo().then(push => push());
 
     const idx = state.gameObjects.indexOf(obj);
     if (idx !== -1) state.gameObjects.splice(idx, 1);

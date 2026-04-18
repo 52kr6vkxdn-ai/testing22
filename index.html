@@ -15,8 +15,8 @@
 <!-- ── Top Menu Bar ──────────────────────────────────────────── -->
 <div class="menu-bar flex items-center px-2 divider-h">
     <div class="flex cursor-default">
-        <span class="menu-item">File</span>
-        <span class="menu-item">Edit</span>
+        <span class="menu-item" id="menu-file">File ▾</span>
+        <span class="menu-item" id="menu-edit">Edit ▾</span>
         <span class="menu-item" id="menu-assets">Assets ▾</span>
         <span class="menu-item" id="menu-gameobject">GameObject ▾</span>
         <span class="menu-item">Component</span>
@@ -27,6 +27,14 @@
 
 <!-- ── Main Toolbar ──────────────────────────────────────────── -->
 <div class="toolbar flex items-center justify-between divider-h relative">
+    <div class="flex" style="border-radius:2px; overflow:hidden; margin-right:6px;">
+        <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)" style="opacity:0.35;">
+            <svg class="icon-stroke" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M3 13A9 9 0 1 0 6 6.2L3 9"/></svg>
+        </button>
+        <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Y)" style="opacity:0.35;">
+            <svg class="icon-stroke" viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M21 13A9 9 0 1 1 18 6.2L21 9"/></svg>
+        </button>
+    </div>
     <div class="flex" style="border-radius:2px; overflow:hidden;">
         <button class="tool-btn">
             <svg class="icon-stroke" viewBox="0 0 24 24"><path d="M10 13V5a2 2 0 014 0v3m0-3a2 2 0 014 0v3m0-3a2 2 0 014 0v8a8 8 0 01-16 0v-4a2 2 0 014 0v4"/></svg>
@@ -47,14 +55,14 @@
 
     <!-- Play controls -->
     <div class="flex absolute" style="left:50%; transform:translateX(-50%); border-radius:2px; overflow:hidden;">
-        <button class="tool-btn play-btn" style="border-right:none;">
-            <svg class="icon" viewBox="0 0 24 24" style="fill:#bbb;"><path d="M8 5v14l11-7z"/></svg>
+        <button class="tool-btn play-btn" id="btn-play" title="Play (Space)" style="border-right:none;">
+            <svg class="icon" viewBox="0 0 24 24" style="fill:#4ade80;"><path d="M8 5v14l11-7z"/></svg>
         </button>
-        <button class="tool-btn play-btn" style="border-right:none;">
-            <svg class="icon" viewBox="0 0 24 24" style="fill:#bbb;"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+        <button class="tool-btn play-btn" id="btn-pause" title="Pause" style="border-right:none;">
+            <svg class="icon" viewBox="0 0 24 24" style="fill:#facc15;"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
         </button>
-        <button class="tool-btn play-btn">
-            <svg class="icon" viewBox="0 0 24 24" style="fill:#bbb;"><path d="M5 5v14l10-7zM17 5h2v14h-2z"/></svg>
+        <button class="tool-btn play-btn" id="btn-stop" title="Stop">
+            <svg class="icon" viewBox="0 0 24 24" style="fill:#f87171;"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>
         </button>
     </div>
 
@@ -234,7 +242,7 @@
             <!-- Status bar -->
             <div class="divider-t flex items-center px-3" style="height:22px; background:var(--bg-header); color:var(--text-dark); flex-shrink:0;">
                 <svg class="icon-stroke mr-1" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
-                Scroll to zoom · Middle-click to pan · <strong style="color:#aaa; margin:0 3px;">Shift</strong>+drag to snap · <strong style="color:#aaa; margin:0 3px;">Delete</strong> to remove · Double-click name to rename · <strong style="color:#3A72A5; margin:0 3px;">Double-click object</strong> to open Animation Editor
+                Scroll to zoom · Middle-click to pan · <strong style="color:#aaa; margin:0 3px;">Shift</strong>+drag to snap · <strong style="color:#aaa; margin:0 3px;">Del</strong> remove · <strong style="color:#aaa; margin:0 3px;">Ctrl+Z/Y</strong> undo/redo · <strong style="color:#aaa; margin:0 3px;">Ctrl+C/V</strong> copy/paste · <strong style="color:#aaa; margin:0 3px;">Space</strong> play/stop · <strong style="color:#3A72A5; margin:0 3px;">Double-click object</strong> → Animation Editor
             </div>
         </div>
 

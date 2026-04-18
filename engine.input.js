@@ -7,6 +7,12 @@ import { state, SNAP_GRID } from './engine.state.js';
 import { syncPixiToInspector } from './engine.ui.js';
 import { deleteSelected } from './engine.objects.js';
 
+let _pushUndo = null;
+async function _getUndo() {
+    if (!_pushUndo) _pushUndo = (await import('./engine.history.js')).pushUndo;
+    return _pushUndo;
+}
+
 // ── Camera Controls ──────────────────────────────────────────
 export function initCameraControls() {
     const canvas = state.app.view;
@@ -79,6 +85,9 @@ export function initGizmoDrag() {
             sy:  obj.scale.y,
             rot: obj.rotation,
         };
+
+        // Record undo before drag begins
+        _getUndo().then(push => push());
 
         if (mode === 'r') {
             const localCenter = obj.parent.toLocal(obj.getGlobalPosition());

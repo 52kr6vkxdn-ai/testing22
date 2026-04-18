@@ -66,4 +66,20 @@ export const state = {
 
     // ── Internal gizmo binding ────────────────────────────
     _gizmoHandles: null,
+
+    // ── Undo / Redo ───────────────────────────────────────
+    /** @type {Array<object>} */
+    undoStack: [],
+    /** @type {Array<object>} */
+    redoStack: [],
+
+    // ── Clipboard ─────────────────────────────────────────
+    /** @type {object|null} */
+    clipboard: null,
+
+    // ── Play Mode ─────────────────────────────────────────
+    isPlaying:  false,
+    isPaused:   false,
+    /** snapshot taken when play was pressed, to restore on stop */
+    _playSnapshot: null,
 };
