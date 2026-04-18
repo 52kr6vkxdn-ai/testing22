@@ -43,7 +43,6 @@ export function createShapeObject(shapeKey, x = 0, y = 0) {
     const g = _drawShape(shapeKey, def.color);
     container.addChild(g);
     container.spriteGraphic = g;
-    container._tintColor = def.color;  // store initial tint per-object
 
     _attachGizmos(container);
     if (state._bindGizmoHandles) state._bindGizmoHandles(container);
@@ -66,16 +65,12 @@ export function createImageObject(asset, x = 0, y = 0) {
     container.isImage  = true;
     container.assetId  = asset.id;
 
-    const tex = PIXI.Texture.from(asset.dataURL);
-    // Use linear filtering for smooth edges — no pixelation
-    tex.baseTexture.scaleMode = PIXI.SCALE_MODES.LINEAR;
-    const sprite = new PIXI.Sprite(tex);
+    const tex     = PIXI.Texture.from(asset.dataURL);
+    const sprite  = new PIXI.Sprite(tex);
     sprite.anchor.set(0.5);
-    // Initial display size: 100px on longest axis, but retain full source resolution
-    const natW   = tex.baseTexture.realWidth  || 100;
-    const natH   = tex.baseTexture.realHeight || 100;
-    const maxDim = Math.max(natW, natH);
-    const scale  = 100 / maxDim;
+    // Normalise to 100×100 px initially
+    const maxDim  = Math.max(tex.width || 100, tex.height || 100);
+    const scale   = 100 / maxDim;
     sprite.scale.set(scale);
     container.addChild(sprite);
     container.spriteGraphic = sprite;
@@ -93,16 +88,17 @@ export function createImageObject(asset, x = 0, y = 0) {
 
 // ── Select Object ─────────────────────────────────────────────
 export function selectObject(obj) {
-    // Hide ALL object gizmos first (clean slate)
-    for (const o of state.gameObjects) {
-        if (o._gizmoContainer) o._gizmoContainer.visible = false;
+    // Hide old gizmos
+    if (state.gameObject && state.gameObject !== obj) {
+        const oldGizmo = state.gameObject._gizmoContainer;
+        if (oldGizmo) oldGizmo.visible = false;
     }
 
     state.gameObject = obj;
 
     if (obj) {
-        // Show this object's gizmo container
-        if (obj._gizmoContainer) obj._gizmoContainer.visible = true;
+        const gc = obj._gizmoContainer;
+        if (gc) gc.visible = true;
 
         state.gizmoContainer = obj._gizmoContainer;
         state.grpTranslate   = obj._grpTranslate;
@@ -111,22 +107,91 @@ export function selectObject(obj) {
         state._gizmoHandles  = obj._gizmoHandles;
         state.spriteBox      = obj.spriteGraphic;
 
-        // Apply the CURRENT gizmo mode immediately — fixes selection bug
-        const m = state.gizmoMode || 'translate';
-        if (obj._grpTranslate) obj._grpTranslate.visible = (m === 'translate' || m === 'all');
-        if (obj._grpRotate)    obj._grpRotate.visible    = (m === 'rotate'    || m === 'all');
-        if (obj._grpScale)     obj._grpScale.visible     = (m === 'scale'     || m === 'all');
-
-        // Sync color picker to this object's actual tint (per-object inspector fix)
-        const colorEl = document.getElementById('inp-color');
-        if (colorEl && obj.spriteGraphic?.tint !== undefined) {
-            const tint = obj.spriteGraphic.tint;
-            colorEl.value = '#' + tint.toString(16).padStart(6, '0');
+        // FIX: Apply active gizmo mode to newly selected object's groups
+        if (obj._grpTranslate) {
+            const m = state.gizmoMode || 'translate';
+            obj._grpTranslate.visible = m === 'translate' || m === 'all';
+            obj._grpRotate.visible    = m === 'rotate'    || m === 'all';
+            obj._grpScale.visible     = m === 'scale'     || m === 'all';
         }
     }
 
     syncPixiToInspector();
     refreshHierarchy();
+}
+
+// ── Save As Prefab ────────────────────────────────────────────
+export function saveAsPrefab(obj) {
+    if (!obj) return;
+    const name = obj.label || 'Prefab';
+    const prefab = {
+        id:        'prefab_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+        name,
+        shapeKey:  obj.shapeKey  || 'square',
+        isImage:   obj.isImage   || false,
+        assetId:   obj.assetId   || null,
+        tint:      obj.spriteGraphic?.tint ?? 0xFFFFFF,
+        scaleX:    obj.scale.x,
+        scaleY:    obj.scale.y,
+        rotation:  obj.rotation,
+        animations: obj.animations ? JSON.parse(JSON.stringify(obj.animations)) : [],
+    };
+    state.prefabs.push(prefab);
+    obj.prefabId = prefab.id; // link this instance to the prefab
+    import('./engine.ui.js').then(m => {
+        m.refreshPrefabPanel();
+        m.syncPixiToInspector(); // refresh inspector to show prefab link
+    });
+    return prefab;
+}
+
+// ── Apply Prefab Changes to All Instances ─────────────────────
+export function applyPrefabToAll(prefabId) {
+    const prefab = state.prefabs.find(p => p.id === prefabId);
+    if (!prefab) return;
+    // Update prefab data from currently selected object
+    const src = state.gameObject;
+    if (src && src.prefabId === prefabId) {
+        prefab.tint       = src.spriteGraphic?.tint ?? 0xFFFFFF;
+        prefab.scaleX     = src.scale.x;
+        prefab.scaleY     = src.scale.y;
+        prefab.rotation   = src.rotation;
+        prefab.animations = src.animations ? JSON.parse(JSON.stringify(src.animations)) : [];
+        prefab.name       = src.label;
+    }
+    // Apply to all instances
+    for (const obj of state.gameObjects) {
+        if (obj.prefabId !== prefabId || obj === src) continue;
+        if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint;
+        obj.scale.x  = prefab.scaleX;
+        obj.scale.y  = prefab.scaleY;
+        obj.rotation = prefab.rotation;
+        if (prefab.animations) obj.animations = JSON.parse(JSON.stringify(prefab.animations));
+    }
+    import('./engine.ui.js').then(m => m.refreshPrefabPanel());
+}
+
+// ── Instantiate Prefab from prefab data ───────────────────────
+export function instantiatePrefab(prefab, x = 0, y = 0) {
+    let obj;
+    if (prefab.isImage && prefab.assetId) {
+        const asset = state.assets.find(a => a.id === prefab.assetId);
+        if (asset) obj = createImageObject(asset, x, y);
+        else       obj = createShapeObject(prefab.shapeKey || 'square', x, y);
+    } else {
+        obj = createShapeObject(prefab.shapeKey || 'square', x, y);
+    }
+    if (!obj) return null;
+    obj.label    = prefab.name;
+    obj.scale.x  = prefab.scaleX;
+    obj.scale.y  = prefab.scaleY;
+    obj.rotation = prefab.rotation;
+    obj.prefabId = prefab.id;
+    if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint;
+    if (prefab.animations?.length) obj.animations = JSON.parse(JSON.stringify(prefab.animations));
+    if (state._bindGizmoHandles) state._bindGizmoHandles(obj);
+    refreshHierarchy();
+    return obj;
 }
 
 // ── Delete Selected Object ────────────────────────────────────
@@ -181,18 +246,14 @@ export function moveObjectDown(obj) {
     refreshHierarchy();
 }
 
-// ── Apply Z position as Z-order (render priority) ────────────
-export function applyZOrder(obj) {
-    if (!obj || !state.sceneContainer) return;
-    const z = obj.unityZ || 0;
-    // Re-insert at correct zIndex position based on unityZ
-    const sorted = [...state.gameObjects].sort((a, b) => (a.unityZ||0) - (b.unityZ||0));
-    for (let i = 0; i < sorted.length; i++) {
-        const o = sorted[i];
-        if (state.sceneContainer.children.includes(o)) {
-            state.sceneContainer.removeChild(o);
-            state.sceneContainer.addChild(o);
-        }
+// ── Sort objects by Z position (higher Z = rendered on top) ──
+export function sortByZ() {
+    // Stable sort: objects with higher unityZ go last (rendered on top)
+    state.gameObjects.sort((a, b) => (a.unityZ || 0) - (b.unityZ || 0));
+    // Re-order PIXI children to match (grid/camera layers stay at index 0,1)
+    for (const obj of state.gameObjects) {
+        state.sceneContainer.removeChild(obj);
+        state.sceneContainer.addChild(obj);
     }
     refreshHierarchy();
 }

@@ -14,11 +14,10 @@ import {
     syncPixiToInspector,
     refreshHierarchy,
     refreshAssetPanel,
+    refreshPrefabPanel,
     initSceneDrop,
 } from './engine.ui.js';
 import { initScenes, toggleSceneDropdown } from './engine.scenes.js';
-import { refreshPrefabPanel, initPrefabDrop } from './engine.prefabs.js';
-import { refreshAudioPanel } from './engine.audio.js';
 
 export function startEngine() {
     if (typeof PIXI === 'undefined') {
@@ -34,8 +33,14 @@ export function startEngine() {
         resolution:      window.devicePixelRatio || 1,
         autoDensity:     true,
         preference:      'webgl',
+        antialias:       true,
     });
     container.appendChild(state.app.view);
+
+    // Image quality: use linear (bilinear) filtering — no pixelation on scale/zoom
+    PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.LINEAR;
+    // Preserve full resolution — no forced downscale
+    PIXI.settings.MIPMAP_TEXTURES = PIXI.MIPMAP_MODES.ON;
 
     initScene();
     startGizmoSizeTicker();
@@ -45,7 +50,6 @@ export function startEngine() {
     cacheInspectorElements();
     initInspectorListeners();
     initSceneDrop();
-    initPrefabDrop();
 
     setGizmoMode('translate');
 
@@ -56,65 +60,11 @@ export function startEngine() {
     syncPixiToInspector();
     refreshHierarchy();
     refreshAssetPanel();
-    refreshPrefabPanel();
-    refreshAudioPanel();
 
     // Init scenes + menus
     initScenes();
     initMenus();
     initResizePanels();
-    initContextMenu();
-}
-
-// ── Right-click context menu on scene ────────────────────────
-function initContextMenu() {
-    const canvas = document.getElementById('pixi-container');
-    if (!canvas) return;
-    canvas.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        const obj = state.gameObject;
-        if (!obj) return;
-
-        document.getElementById('ctx-menu')?.remove();
-        const menu = document.createElement('div');
-        menu.id = 'ctx-menu';
-        menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;
-            background:#242424;border:1px solid #444;border-radius:3px;
-            box-shadow:0 4px 16px rgba(0,0,0,0.6);z-index:9999;font-size:11px;
-            color:#e0e0e0;min-width:160px;padding:3px 0;`;
-
-        const items = [
-            { label: '⭐ Save as Prefab', action: () => {
-                import('./engine.prefabs.js').then(m => {
-                    m.saveAsPrefab(obj);
-                    // Switch to prefab tab
-                    document.getElementById('tab-prefabs-btn')?.click();
-                });
-            }},
-            { separator: true },
-            { label: '🗑 Delete Object', action: () => import('./engine.objects.js').then(m => m.deleteSelected()) },
-        ];
-
-        for (const item of items) {
-            if (item.separator) {
-                const s = document.createElement('div');
-                s.style.cssText = 'border-top:1px solid #333;margin:3px 0;';
-                menu.appendChild(s); continue;
-            }
-            const row = document.createElement('div');
-            row.style.cssText = 'padding:6px 14px;cursor:pointer;white-space:nowrap;';
-            row.textContent = item.label;
-            row.addEventListener('mouseenter', () => row.style.background = '#3A72A5');
-            row.addEventListener('mouseleave', () => row.style.background = '');
-            row.addEventListener('click', () => { menu.remove(); item.action(); });
-            menu.appendChild(row);
-        }
-
-        document.body.appendChild(menu);
-        setTimeout(() => {
-            document.addEventListener('click', function h() { menu.remove(); document.removeEventListener('click', h); });
-        }, 0);
-    });
 }
 
 // ── Menu System ───────────────────────────────────────────────
@@ -145,26 +95,81 @@ function initMenus() {
         });
     }
 
-    // File input for assets
+    // File input for assets (images + audio)
     const fileInput = document.getElementById('asset-file-input');
     if (fileInput) {
         fileInput.addEventListener('change', (e) => {
             Array.from(e.target.files).forEach(file => {
-                if (!file.type.startsWith('image/')) return;
                 const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const asset = {
-                        id:      'asset_' + Date.now() + '_' + Math.random().toString(36).slice(2),
-                        name:    file.name,
-                        dataURL: ev.target.result,
+
+                if (file.type.startsWith('image/')) {
+                    reader.onload = (ev) => {
+                        const asset = {
+                            id:      'asset_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+                            name:    file.name,
+                            type:    'sprite',
+                            dataURL: ev.target.result,
+                        };
+                        state.assets.push(asset);
+                        refreshAssetPanel();
                     };
-                    state.assets.push(asset);
-                    refreshAssetPanel();
-                };
-                reader.readAsDataURL(file);
+                    reader.readAsDataURL(file);
+
+                } else if (file.type.startsWith('audio/')) {
+                    reader.onload = (ev) => {
+                        const asset = {
+                            id:      'asset_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+                            name:    file.name,
+                            type:    'audio',
+                            dataURL: ev.target.result,
+                            size:    file.size,
+                            mimeType: file.type,
+                        };
+                        state.assets.push(asset);
+                        refreshAssetPanel();
+                        // Auto-switch to audio folder view
+                        import('./engine.ui.js').then(m => m.setAssetFilter('audio'));
+                    };
+                    reader.readAsDataURL(file);
+                }
             });
-            // Reset so same file can be re-imported
             fileInput.value = '';
+        });
+    }
+
+    // Save as Prefab button
+    const prefabBtn = document.getElementById('btn-save-prefab');
+    if (prefabBtn) {
+        prefabBtn.addEventListener('click', () => {
+            if (!state.gameObject) return;
+            import('./engine.objects.js').then(m => {
+                const prefab = m.saveAsPrefab(state.gameObject);
+                if (prefab) {
+                    // Switch bottom panel to Prefabs tab
+                    document.getElementById('tab-prefabs-btn')?.click();
+                }
+            });
+        });
+    }
+
+    // Apply to all instances button
+    const applyAllBtn = document.getElementById('btn-prefab-apply-all');
+    if (applyAllBtn) {
+        applyAllBtn.addEventListener('click', () => {
+            const go = state.gameObject;
+            if (!go?.prefabId) return;
+            import('./engine.objects.js').then(m => m.applyPrefabToAll(go.prefabId));
+        });
+    }
+
+    // Unlink from prefab button
+    const unlinkBtn = document.getElementById('btn-prefab-unlink');
+    if (unlinkBtn) {
+        unlinkBtn.addEventListener('click', () => {
+            if (state.gameObject) {
+                state.gameObject.prefabId = null;
+                import('./engine.ui.js').then(m => m.syncPixiToInspector());
+            }
         });
     }
 

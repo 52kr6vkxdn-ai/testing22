@@ -93,6 +93,7 @@ function _saveCurrentScene() {
         shapeKey:  obj.shapeKey,
         isImage:   obj.isImage,
         assetId:   obj.assetId,
+        prefabId:  obj.prefabId || null,
         x:         obj.x,
         y:         obj.y,
         scaleX:    obj.scale.x,
@@ -173,6 +174,7 @@ function _loadScene(index) {
                 obj.scale.y    = s.scaleY;
                 obj.rotation   = s.rotation;
                 obj.unityZ     = s.unityZ;
+                obj.prefabId   = s.prefabId || null;
                 if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = s.tint;
 
                 // Restore animations

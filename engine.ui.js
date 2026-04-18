@@ -35,6 +35,9 @@ export function syncPixiToInspector() {
     if (!go) {
         ['px','py','pz','rz','sx','sy'].forEach(k => { if(els[k]) els[k].value = ''; });
         if (els.objName) els.objName.value = '';
+        // Hide prefab section
+        const pf = document.getElementById('inspector-prefab-section');
+        if (pf) pf.style.display = 'none';
         return;
     }
 
@@ -49,6 +52,26 @@ export function syncPixiToInspector() {
     els.sx.value = go.scale.x.toFixed(2);
     els.sy.value = go.scale.y.toFixed(2);
     if (els.objName) els.objName.value = go.label || '';
+
+    // FIX: Per-object color — read tint from this specific object's sprite
+    if (els.color && go.spriteGraphic?.tint !== undefined) {
+        const tint = go.spriteGraphic.tint;
+        const hex  = '#' + (tint >>> 0).toString(16).padStart(6, '0');
+        els.color.value = hex;
+    }
+
+    // Prefab section visibility
+    const pfSection = document.getElementById('inspector-prefab-section');
+    if (pfSection) {
+        if (go.prefabId) {
+            const prefab = state.prefabs.find(p => p.id === go.prefabId);
+            pfSection.style.display = '';
+            const nameEl = document.getElementById('inspector-prefab-name');
+            if (nameEl) nameEl.textContent = prefab ? prefab.name : 'Unknown Prefab';
+        } else {
+            pfSection.style.display = 'none';
+        }
+    }
 }
 
 // ── Inspector → PIXI ─────────────────────────────────────────
@@ -57,17 +80,18 @@ export function syncInspectorToPixi() {
     const go = state.gameObject;
     if (!go) return;
 
-    const prevZ = go.unityZ;
     go.x        = (parseFloat(els.px.value) || 0) *  PIXELS_PER_UNIT;
     go.y        = (parseFloat(els.py.value) || 0) * -PIXELS_PER_UNIT;
-    go.unityZ   =  parseFloat(els.pz.value) || 0;
+    const newZ  = parseFloat(els.pz.value) || 0;
+    const zChanged = newZ !== (go.unityZ || 0);
+    go.unityZ   = newZ;
     go.rotation = (parseFloat(els.rz.value) || 0) * -Math.PI / 180;
-    go.scale.x  =  parseFloat(els.sx.value) || 1;
-    go.scale.y  =  parseFloat(els.sy.value) || 1;
+    go.scale.x  = parseFloat(els.sx.value) || 1;
+    go.scale.y  = parseFloat(els.sy.value) || 1;
 
-    // Z value changed → re-sort render order immediately
-    if (go.unityZ !== prevZ) {
-        import('./engine.objects.js').then(m => m.applyZOrder(go));
+    // Re-sort render order when Z changes
+    if (zChanged) {
+        import('./engine.objects.js').then(m => m.sortByZ());
     }
 }
 
@@ -220,29 +244,49 @@ function _makeZBtn(label, cb) {
 }
 
 // ── Asset Panel ───────────────────────────────────────────────
+let _assetFilter = 'all'; // 'all' | 'sprite' | 'audio'
+
+export function setAssetFilter(filter) {
+    _assetFilter = filter;
+    refreshAssetPanel();
+}
+
 export function refreshAssetPanel() {
     const grid = document.getElementById('asset-grid');
     if (!grid) return;
 
     grid.innerHTML = '';
 
-    for (const asset of state.assets) {
+    const filtered = state.assets.filter(a => {
+        if (_assetFilter === 'sprite') return a.type !== 'audio';
+        if (_assetFilter === 'audio')  return a.type === 'audio';
+        return true;
+    });
+
+    for (const asset of filtered) {
         const item = document.createElement('div');
         item.className = 'file-item';
         item.style.cssText = 'display:flex; flex-direction:column; align-items:center; width:72px; padding:4px; border-radius:2px; cursor:grab; border:1px solid transparent;';
         item.draggable = true;
         item.dataset.assetId = asset.id;
 
-        const thumb = document.createElement('img');
-        thumb.src = asset.dataURL;
-        thumb.style.cssText = 'width:48px; height:48px; object-fit:contain; border-radius:2px; background:#1e1e1e; image-rendering:auto;';
+        if (asset.type === 'audio') {
+            // Audio icon
+            const iconWrap = document.createElement('div');
+            iconWrap.style.cssText = 'width:48px; height:48px; display:flex; align-items:center; justify-content:center; background:#1a1a2e; border-radius:4px; font-size:24px;';
+            iconWrap.textContent = '🎵';
+            item.appendChild(iconWrap);
+        } else {
+            const thumb = document.createElement('img');
+            thumb.src = asset.dataURL;
+            thumb.style.cssText = 'width:48px; height:48px; object-fit:contain; border-radius:2px; background:#1e1e1e;';
+            item.appendChild(thumb);
+        }
 
         const name = document.createElement('span');
         name.textContent = asset.name.length > 10 ? asset.name.slice(0, 9) + '…' : asset.name;
         name.title = asset.name;
         name.style.cssText = 'font-size:10px; color:#ccc; text-align:center; margin-top:3px; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
-
-        item.appendChild(thumb);
         item.appendChild(name);
 
         // Drag start
@@ -255,8 +299,95 @@ export function refreshAssetPanel() {
         item.addEventListener('mouseenter', () => item.style.background = '#444');
         item.addEventListener('mouseleave', () => item.style.background = 'transparent');
 
+        // Click audio asset → select for inspector
+        if (asset.type === 'audio') {
+            item.addEventListener('click', () => _showAudioInspector(asset));
+        }
+
         grid.appendChild(item);
     }
+
+    if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'color:#555; font-size:11px; padding:12px; font-style:italic;';
+        empty.textContent = _assetFilter === 'audio' ? 'No audio assets imported' : 'No assets yet';
+        grid.appendChild(empty);
+    }
+}
+
+function _showAudioInspector(asset) {
+    // Show basic audio info in a toast/status bar
+    const bar = document.getElementById('audio-inspector-bar');
+    if (!bar) return;
+    bar.innerHTML = `
+        <span style="color:#aaa; margin-right:8px;">🎵 ${asset.name}</span>
+        <button onclick="this.parentElement.style.display='none'" style="background:none;border:none;color:#666;cursor:pointer;font-size:12px;">✕</button>
+    `;
+    bar.style.display = 'flex';
+}
+
+// ── Prefab Panel ──────────────────────────────────────────────
+export function refreshPrefabPanel() {
+    const grid = document.getElementById('prefab-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (state.prefabs.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'color:#555; font-size:11px; padding:12px; font-style:italic;';
+        empty.textContent = 'No prefabs yet. Select an object and click "Save as Prefab".';
+        grid.appendChild(empty);
+        return;
+    }
+
+    for (const prefab of state.prefabs) {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex; flex-direction:column; align-items:center; width:72px; padding:4px; border-radius:3px; cursor:grab; border:1px solid #3A72A5; background:#1e2e3e; position:relative;';
+        item.draggable = true;
+        item.dataset.prefabId = prefab.id;
+        item.title = `Prefab: ${prefab.name}\nDrag to scene to instantiate`;
+
+        // Icon
+        const iconWrap = document.createElement('div');
+        iconWrap.style.cssText = 'width:40px; height:40px; display:flex; align-items:center; justify-content:center; font-size:20px; background:#0d1b2a; border-radius:4px;';
+        iconWrap.textContent = prefab.isImage ? '🖼️' : _prefabIcon(prefab.shapeKey);
+        item.appendChild(iconWrap);
+
+        const name = document.createElement('span');
+        name.textContent = prefab.name.length > 10 ? prefab.name.slice(0, 9) + '…' : prefab.name;
+        name.title = prefab.name;
+        name.style.cssText = 'font-size:10px; color:#9bc; text-align:center; margin-top:3px; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        item.appendChild(name);
+
+        // Delete button
+        const delBtn = document.createElement('button');
+        delBtn.textContent = '✕';
+        delBtn.title = 'Delete prefab';
+        delBtn.style.cssText = 'position:absolute; top:2px; right:2px; background:none; border:none; color:#555; cursor:pointer; font-size:10px; padding:0; line-height:1;';
+        delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = state.prefabs.indexOf(prefab);
+            if (idx !== -1) state.prefabs.splice(idx, 1);
+            refreshPrefabPanel();
+        });
+        item.appendChild(delBtn);
+
+        // Drag
+        item.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('prefabId', prefab.id);
+            e.dataTransfer.effectAllowed = 'copy';
+        });
+
+        item.addEventListener('mouseenter', () => item.style.background = '#1e3a5a');
+        item.addEventListener('mouseleave', () => item.style.background = '#1e2e3e');
+
+        grid.appendChild(item);
+    }
+}
+
+function _prefabIcon(shapeKey) {
+    const map = { square:'■', circle:'●', triangle:'▲', diamond:'◆', pentagon:'⬠', hexagon:'⬡', star:'★', capsule:'▬', rightTriangle:'◤', arrow:'↑' };
+    return map[shapeKey] || '■';
 }
 
 // ── Drop onto scene canvas ────────────────────────────────────
@@ -268,10 +399,6 @@ export function initSceneDrop() {
 
     container.addEventListener('drop', (e) => {
         e.preventDefault();
-        const assetId = e.dataTransfer.getData('assetId');
-        if (!assetId) return;
-        const asset = state.assets.find(a => a.id === assetId);
-        if (!asset || !state.app) return;
 
         // Convert page coords → scene-local coords
         const rect   = container.getBoundingClientRect();
@@ -279,6 +406,22 @@ export function initSceneDrop() {
         const py     = e.clientY - rect.top;
         const global = new PIXI.Point(px, py);
         const local  = state.sceneContainer.toLocal(global);
+
+        // ── Prefab drop ──────────────────────────────────────
+        const prefabId = e.dataTransfer.getData('prefabId');
+        if (prefabId) {
+            const prefab = state.prefabs.find(p => p.id === prefabId);
+            if (prefab && state.app) {
+                import('./engine.objects.js').then(m => m.instantiatePrefab(prefab, local.x, local.y));
+            }
+            return;
+        }
+
+        // ── Asset drop (image only — skip audio) ─────────────
+        const assetId = e.dataTransfer.getData('assetId');
+        if (!assetId) return;
+        const asset = state.assets.find(a => a.id === assetId);
+        if (!asset || !state.app || asset.type === 'audio') return;
 
         import('./engine.objects.js').then(m => {
             const obj = m.createImageObject(asset, local.x, local.y);
