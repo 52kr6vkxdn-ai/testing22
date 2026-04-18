@@ -6,6 +6,9 @@
 export const PIXELS_PER_UNIT = 100;
 export const SNAP_GRID       = 25;
 
+// Fields that can be overridden per-instance while staying linked to a prefab
+export const PREFAB_OVERRIDE_FIELDS = ['tint', 'scaleX', 'scaleY', 'rotation'];
+
 export const state = {
     /** @type {PIXI.Application|null} */
     app: null,

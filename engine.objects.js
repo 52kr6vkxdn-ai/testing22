@@ -28,19 +28,23 @@ function _uniqueName(base) {
 }
 
 // ── Create Shape Object ──────────────────────────────────────
-export function createShapeObject(shapeKey, x = 0, y = 0) {
+export function createShapeObject(shapeKey, x = 0, y = 0, initialTint = null) {
     const def = SHAPES[shapeKey];
     if (!def) return;
 
     const container = new PIXI.Container();
     container.x = x;
     container.y = y;
-    container.unityZ  = 0;
-    container.label   = _uniqueName(def.label);
+    container.unityZ   = 0;
+    container.label    = _uniqueName(def.label);
     container.shapeKey = shapeKey;
     container.isImage  = false;
+    container.components = [];
+    container.overrides  = {};  // per-instance override flags
 
-    const g = _drawShape(shapeKey, def.color);
+    const g = _drawShape(shapeKey);   // always white
+    // Set tint = exact colour (initialTint overrides default for prefab restores)
+    g.tint = initialTint ?? def.color;
     container.addChild(g);
     container.spriteGraphic = g;
 
@@ -60,10 +64,12 @@ export function createImageObject(asset, x = 0, y = 0) {
     const container = new PIXI.Container();
     container.x = x;
     container.y = y;
-    container.unityZ   = 0;
-    container.label    = _uniqueName(asset.name.replace(/\.[^.]+$/, ''));
-    container.isImage  = true;
-    container.assetId  = asset.id;
+    container.unityZ    = 0;
+    container.label     = _uniqueName(asset.name.replace(/\.[^.]+$/, ''));
+    container.isImage   = true;
+    container.assetId   = asset.id;
+    container.components = [];
+    container.overrides  = {};  // per-instance override flags
 
     const tex     = PIXI.Texture.from(asset.dataURL);
     const sprite  = new PIXI.Sprite(tex);
@@ -121,76 +127,156 @@ export function selectObject(obj) {
 }
 
 // ── Save As Prefab ────────────────────────────────────────────
-export function saveAsPrefab(obj) {
-    if (!obj) return;
-    const name = obj.label || 'Prefab';
+export function saveAsPrefab(obj, existingId = null) {
+    if (!obj) return null;
+
+    // If already a prefab instance, update the existing definition
+    if (obj.prefabId && !existingId) existingId = obj.prefabId;
+
+    const tint = obj.spriteGraphic?.tint ?? 0xFFFFFF;
+
+    if (existingId) {
+        // Update existing prefab in place
+        const existing = state.prefabs.find(p => p.id === existingId);
+        if (existing) {
+            existing.name           = obj.label || existing.name;
+            existing.tint           = tint;
+            existing.scaleX         = obj.scale.x;
+            existing.scaleY         = obj.scale.y;
+            existing.rotation       = obj.rotation;
+            existing.animations     = obj.animations
+                ? JSON.parse(JSON.stringify(obj.animations)) : [];
+            existing.activeAnimIndex = obj.activeAnimIndex || 0;
+            existing.components     = obj.components
+                ? JSON.parse(JSON.stringify(obj.components)) : [];
+            existing.updatedAt      = Date.now();
+            obj.prefabId = existing.id;
+            import('./engine.ui.js').then(m => {
+                m.refreshPrefabPanel();
+                m.syncPixiToInspector();
+            });
+            return existing;
+        }
+    }
+
+    // Create a brand new prefab definition
     const prefab = {
-        id:        'prefab_' + Date.now() + '_' + Math.random().toString(36).slice(2),
-        name,
-        shapeKey:  obj.shapeKey  || 'square',
-        isImage:   obj.isImage   || false,
-        assetId:   obj.assetId   || null,
-        tint:      obj.spriteGraphic?.tint ?? 0xFFFFFF,
-        scaleX:    obj.scale.x,
-        scaleY:    obj.scale.y,
-        rotation:  obj.rotation,
-        animations: obj.animations ? JSON.parse(JSON.stringify(obj.animations)) : [],
+        id:             'prefab_' + Date.now() + '_' + Math.random().toString(36).slice(2),
+        name:           obj.label || 'Prefab',
+        shapeKey:       obj.shapeKey  || 'square',
+        isImage:        obj.isImage   || false,
+        assetId:        obj.assetId   || null,
+        tint,
+        scaleX:         obj.scale.x,
+        scaleY:         obj.scale.y,
+        rotation:       obj.rotation,
+        animations:     obj.animations
+            ? JSON.parse(JSON.stringify(obj.animations)) : [],
+        activeAnimIndex: obj.activeAnimIndex || 0,
+        components:     obj.components
+            ? JSON.parse(JSON.stringify(obj.components)) : [],
+        tags:           [],
+        createdAt:      Date.now(),
+        updatedAt:      Date.now(),
     };
+
     state.prefabs.push(prefab);
-    obj.prefabId = prefab.id; // link this instance to the prefab
+    obj.prefabId = prefab.id;
+
     import('./engine.ui.js').then(m => {
         m.refreshPrefabPanel();
-        m.syncPixiToInspector(); // refresh inspector to show prefab link
+        m.syncPixiToInspector();
     });
     return prefab;
+}
+
+// ── Break Prefab Link ─────────────────────────────────────────
+export function unlinkFromPrefab(obj) {
+    if (!obj) return;
+    obj.prefabId = null;
+    import('./engine.ui.js').then(m => m.syncPixiToInspector());
 }
 
 // ── Apply Prefab Changes to All Instances ─────────────────────
 export function applyPrefabToAll(prefabId) {
     const prefab = state.prefabs.find(p => p.id === prefabId);
     if (!prefab) return;
-    // Update prefab data from currently selected object
     const src = state.gameObject;
-    if (src && src.prefabId === prefabId) {
-        prefab.tint       = src.spriteGraphic?.tint ?? 0xFFFFFF;
-        prefab.scaleX     = src.scale.x;
-        prefab.scaleY     = src.scale.y;
-        prefab.rotation   = src.rotation;
-        prefab.animations = src.animations ? JSON.parse(JSON.stringify(src.animations)) : [];
-        prefab.name       = src.label;
+    // Push current object state back into the prefab definition first
+    if (src?.prefabId === prefabId) {
+        prefab.tint           = src.spriteGraphic?.tint ?? prefab.tint;
+        prefab.scaleX         = src.scale.x;
+        prefab.scaleY         = src.scale.y;
+        prefab.rotation       = src.rotation;
+        prefab.animations     = src.animations ? JSON.parse(JSON.stringify(src.animations)) : [];
+        prefab.activeAnimIndex = src.activeAnimIndex || 0;
+        prefab.components     = src.components ? JSON.parse(JSON.stringify(src.components)) : [];
+        prefab.updatedAt      = Date.now();
     }
-    // Apply to all instances
+    // Apply to every live instance, respecting per-instance overrides
     for (const obj of state.gameObjects) {
         if (obj.prefabId !== prefabId || obj === src) continue;
-        if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint;
-        obj.scale.x  = prefab.scaleX;
-        obj.scale.y  = prefab.scaleY;
-        obj.rotation = prefab.rotation;
-        if (prefab.animations) obj.animations = JSON.parse(JSON.stringify(prefab.animations));
+        const ov = obj.overrides || {};
+        if (!ov.tint     && obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint;
+        if (!ov.scaleX)  obj.scale.x  = prefab.scaleX;
+        if (!ov.scaleY)  obj.scale.y  = prefab.scaleY;
+        if (!ov.rotation) obj.rotation = prefab.rotation;
+        obj.animations      = prefab.animations ? JSON.parse(JSON.stringify(prefab.animations)) : [];
+        obj.activeAnimIndex = prefab.activeAnimIndex || 0;
+        obj.components      = prefab.components ? JSON.parse(JSON.stringify(prefab.components)) : [];
     }
+    // Also patch all scene snapshots (respecting overrides stored in snapshots)
+    import('./engine.scenes.js').then(m => m.updatePrefabInAllScenes(prefab));
     import('./engine.ui.js').then(m => m.refreshPrefabPanel());
 }
 
-// ── Instantiate Prefab from prefab data ───────────────────────
+// ── Reset a single override field back to prefab value ────────
+export function resetOverride(obj, field) {
+    if (!obj?.prefabId) return;
+    const prefab = state.prefabs.find(p => p.id === obj.prefabId);
+    if (!prefab) return;
+    if (!obj.overrides) obj.overrides = {};
+    obj.overrides[field] = false;
+
+    // Restore the prefab value for this field
+    switch (field) {
+        case 'tint':
+            if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint;
+            break;
+        case 'scaleX':   obj.scale.x  = prefab.scaleX;   break;
+        case 'scaleY':   obj.scale.y  = prefab.scaleY;   break;
+        case 'rotation': obj.rotation = prefab.rotation;  break;
+    }
+    import('./engine.ui.js').then(m => { m.syncPixiToInspector(); });
+}
+
+// ── Instantiate Prefab ────────────────────────────────────────
 export function instantiatePrefab(prefab, x = 0, y = 0) {
     let obj;
     if (prefab.isImage && prefab.assetId) {
         const asset = state.assets.find(a => a.id === prefab.assetId);
         if (asset) obj = createImageObject(asset, x, y);
-        else       obj = createShapeObject(prefab.shapeKey || 'square', x, y);
-    } else {
-        obj = createShapeObject(prefab.shapeKey || 'square', x, y);
     }
+    if (!obj) obj = createShapeObject(prefab.shapeKey || 'square', x, y, prefab.tint);
+
     if (!obj) return null;
-    obj.label    = prefab.name;
-    obj.scale.x  = prefab.scaleX;
-    obj.scale.y  = prefab.scaleY;
-    obj.rotation = prefab.rotation;
-    obj.prefabId = prefab.id;
-    if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint;
-    if (prefab.animations?.length) obj.animations = JSON.parse(JSON.stringify(prefab.animations));
+
+    obj.label           = prefab.name;
+    obj.scale.x         = prefab.scaleX ?? 1;
+    obj.scale.y         = prefab.scaleY ?? 1;
+    obj.rotation        = prefab.rotation ?? 0;
+    obj.prefabId        = prefab.id;
+    obj.overrides       = {};   // starts clean — no overrides
+    obj.animations      = prefab.animations ? JSON.parse(JSON.stringify(prefab.animations)) : [];
+    obj.activeAnimIndex = prefab.activeAnimIndex || 0;
+    obj.components      = prefab.components ? JSON.parse(JSON.stringify(prefab.components)) : [];
+    if (obj.spriteGraphic?.tint !== undefined) obj.spriteGraphic.tint = prefab.tint ?? 0xFFFFFF;
+
     if (state._bindGizmoHandles) state._bindGizmoHandles(obj);
-    refreshHierarchy();
+    import('./engine.ui.js').then(m => {
+        m.refreshHierarchy();
+        m.refreshPrefabPanel();
+    });
     return obj;
 }
 
@@ -323,9 +409,11 @@ function _makeSelectable(container) {
 }
 
 // ── Shape drawing ─────────────────────────────────────────────
-function _drawShape(key, color) {
+// All shapes are drawn in WHITE so that PIXI tint = exact user colour.
+// The initial tint is set to the shape's default colour in createShapeObject.
+function _drawShape(key) {
     const g = new PIXI.Graphics();
-    g.beginFill(color);
+    g.beginFill(0xFFFFFF);   // always white — tint provides the real colour
 
     switch (key) {
         case 'square':

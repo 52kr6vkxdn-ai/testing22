@@ -145,7 +145,6 @@ function initMenus() {
             import('./engine.objects.js').then(m => {
                 const prefab = m.saveAsPrefab(state.gameObject);
                 if (prefab) {
-                    // Switch bottom panel to Prefabs tab
                     document.getElementById('tab-prefabs-btn')?.click();
                 }
             });
@@ -162,14 +161,23 @@ function initMenus() {
         });
     }
 
+    // Open Prefab Editor button (from inspector)
+    const editPrefabBtn = document.getElementById('btn-prefab-open-editor');
+    if (editPrefabBtn) {
+        editPrefabBtn.addEventListener('click', () => {
+            const go = state.gameObject;
+            if (!go?.prefabId) return;
+            const prefab = state.prefabs.find(p => p.id === go.prefabId);
+            if (prefab) import('./engine.prefab-editor.js').then(m => m.openPrefabEditor(prefab));
+        });
+    }
+
     // Unlink from prefab button
     const unlinkBtn = document.getElementById('btn-prefab-unlink');
     if (unlinkBtn) {
         unlinkBtn.addEventListener('click', () => {
-            if (state.gameObject) {
-                state.gameObject.prefabId = null;
-                import('./engine.ui.js').then(m => m.syncPixiToInspector());
-            }
+            if (!state.gameObject) return;
+            import('./engine.objects.js').then(m => m.unlinkFromPrefab(state.gameObject));
         });
     }
 
